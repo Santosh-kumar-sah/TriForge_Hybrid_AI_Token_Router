@@ -12,7 +12,8 @@ import {
   CheckCircle,
   TrendingDown,
   Download,
-  FileText
+  FileText,
+  Trash2
 } from "lucide-react";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -105,6 +106,27 @@ export default function BenchmarksPage() {
       setError(err.message || "Error running benchmark sweep.");
     } finally {
       setRunning(false);
+    }
+  };
+
+  const handleDeleteBenchmark = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this benchmark run?")) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/benchmarks/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete benchmark run.");
+      
+      setHistory(prev => {
+        const updated = prev.filter(item => item.id !== id);
+        if (selectedRun?.id === id) {
+          setSelectedRun(updated.length > 0 ? updated[0] : null);
+        }
+        return updated;
+      });
+    } catch (err: any) {
+      alert(err.message || "Error deleting benchmark sweep.");
     }
   };
 
@@ -336,13 +358,22 @@ Generated automatically by TriForge Benchmark Harness
                 <div 
                   key={run.id}
                   onClick={() => setSelectedRun(run)}
-                  className={`p-3 rounded-lg border text-left cursor-pointer transition ${
+                  className={`p-3 rounded-lg border text-left cursor-pointer transition relative group ${
                     selectedRun?.id === run.id 
                       ? "bg-zinc-800 border-amber-500/45 text-white" 
                       : "bg-zinc-950/50 border-zinc-850 hover:bg-zinc-850/30 text-zinc-400"
                   }`}
                 >
-                  <p className="text-xs font-bold truncate">{run.benchmark_name}</p>
+                  <div className="flex justify-between items-start">
+                    <p className="text-xs font-bold truncate max-w-[80%]">{run.benchmark_name}</p>
+                    <button
+                      onClick={(e) => handleDeleteBenchmark(run.id, e)}
+                      className="text-zinc-500 hover:text-red-400 p-0.5 rounded transition opacity-0 group-hover:opacity-100 focus:opacity-100"
+                      title="Delete Run"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                   <p className="text-[10px] text-zinc-500 mt-1">
                     {new Date(run.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                   </p>

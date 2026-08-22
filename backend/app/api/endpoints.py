@@ -635,6 +635,23 @@ def get_history(limit: int = 20, db: Session = Depends(get_db)):
         ))
     return history
 
+@router.delete("/history/{id}")
+def delete_history_item(id: int, db: Session = Depends(get_db)):
+    record = db.query(RequestModel).filter(RequestModel.id == id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    db.delete(record)
+    db.commit()
+    return {"status": "success", "message": "Transaction deleted"}
+
+@router.delete("/history/before-today")
+def delete_history_before_today(db: Session = Depends(get_db)):
+    from datetime import datetime, time
+    today_start = datetime.combine(datetime.now().date(), time.min)
+    deleted_count = db.query(RequestModel).filter(RequestModel.timestamp < today_start).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "success", "deleted_count": deleted_count}
+
 @router.post("/benchmark")
 def run_benchmark_endpoint(req: BenchmarkRunRequest, db: Session = Depends(get_db)):
     runner = BenchmarkRunner(db)
@@ -658,6 +675,15 @@ def get_benchmarks(limit: int = 10, db: Session = Depends(get_db)):
             config_json=b.config_json
         ) for b in b_records
     ]
+
+@router.delete("/benchmarks/{id}")
+def delete_benchmark(id: int, db: Session = Depends(get_db)):
+    record = db.query(BenchmarkModel).filter(BenchmarkModel.id == id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+    db.delete(record)
+    db.commit()
+    return {"status": "success", "message": "Benchmark deleted"}
 
 @router.get("/models")
 def get_supported_models():
