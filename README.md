@@ -12,6 +12,8 @@ By combining intent classification, 2-stage semantic vector caching, adaptive th
 
 ---
 
+Deployed Link - https://tri-forge.vercel.app/
+
 ## 🎯 Architecture & System Flow
 
 ```mermaid
