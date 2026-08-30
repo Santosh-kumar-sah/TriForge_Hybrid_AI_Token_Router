@@ -13,10 +13,11 @@ import {
   TrendingDown,
   Download,
   FileText,
-  Trash2
+  Trash2,
+  AlertTriangle
 } from "lucide-react";
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
 import { FadeInUp } from "@/components/MotionWrapper";
 import { TiltCard } from "@/components/TiltCard";
@@ -46,7 +47,10 @@ interface BenchmarkHistoryItem {
   config_json: string; // contains the full runs details
 }
 
+import { useAuth } from "@/context/AuthContext";
+
 export default function BenchmarksPage() {
+  const { user, authHeaders } = useAuth();
   const [history, setHistory] = useState<BenchmarkHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -63,7 +67,10 @@ export default function BenchmarksPage() {
   const fetchBenchmarks = async (selectFirst = false) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/benchmarks`);
+      const emailQuery = user?.email ? `?user_email=${encodeURIComponent(user.email)}` : "";
+      const res = await fetch(`${API_BASE_URL}/api/benchmarks${emailQuery}`, {
+        headers: authHeaders
+      });
       if (!res.ok) throw new Error("Failed to fetch benchmark runs.");
       const json = await res.json();
       setHistory(json);
@@ -80,13 +87,14 @@ export default function BenchmarksPage() {
   useEffect(() => {
     fetchBenchmarks(true);
     // Fetch compute backend hardware info
-    fetch(`${API_BASE_URL}/api/settings`)
+    const emailQuery = user?.email ? `?user_email=${encodeURIComponent(user.email)}` : "";
+    fetch(`${API_BASE_URL}/api/settings${emailQuery}`, { headers: authHeaders })
       .then(res => res.json())
       .then(data => {
         if (data?.compute_backend) setComputeBackend(data.compute_backend);
       })
       .catch(() => {});
-  }, []);
+  }, [user?.email]);
 
   const triggerBenchmark = async () => {
     setRunning(true);
@@ -94,10 +102,15 @@ export default function BenchmarksPage() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/benchmark`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...authHeaders
+        },
         body: JSON.stringify({
           benchmark_name: runName,
-          threshold: threshold
+          threshold: threshold,
+          user_email: user?.email,
+          user_id: user?.id
         })
       });
       if (!res.ok) throw new Error("Failed running benchmark sweep.");
@@ -163,7 +176,26 @@ export default function BenchmarksPage() {
       `${Math.max(0, (((remoteP95 - routerP95) / (remoteP95 || 1)) * 100)).toFixed(1)}% lower p95 latency.`
     );
 
-    const reportContent = `================================================================================
+    let gateHeader = "";
+    if (parsed && parsed.sanity_gate && !parsed.sanity_gate.valid) {
+      const violationsBlock = parsed.sanity_gate.violations.map((v: string) => `- ${v}`).join("\n");
+      const warningsBlock = parsed.sanity_gate.warnings.map((w: string) => `- ${w}`).join("\n");
+      gateHeader = `================================================================================
+⚠️ INVALID RUN — DO NOT USE FOR PRESENTATION — see violations below
+================================================================================
+Violations:
+${violationsBlock}
+${warningsBlock ? `\nWarnings:\n${warningsBlock}` : ""}
+================================================================================\n\n`;
+    } else if (parsed && parsed.sanity_gate && parsed.sanity_gate.warnings && parsed.sanity_gate.warnings.length > 0) {
+      const warningsBlock = parsed.sanity_gate.warnings.map((w: string) => `- ${w}`).join("\n");
+      gateHeader = `================================================================================
+⚠️ WARNING:
+${warningsBlock}
+================================================================================\n\n`;
+    }
+
+    const reportContent = gateHeader + `================================================================================
            TRIFORGE HYBRID LLM ROUTER - EVALUATION REPORT
 ================================================================================
 
@@ -231,7 +263,7 @@ Generated automatically by TriForge Benchmark Harness
   };
 
   // Parse custom configurations
-  let parsedResults: Record<string, BenchmarkRunResult> | null = null;
+  let parsedResults: Record<string, any> | null = null;
   if (selectedRun?.config_json) {
     try {
       parsedResults = JSON.parse(selectedRun.config_json);
@@ -410,6 +442,35 @@ Generated automatically by TriForge Benchmark Harness
                   </button>
                 </div>
 
+                {/* Sanity Gate Status Banner */}
+                {parsedResults?.sanity_gate && !parsedResults.sanity_gate.valid && (
+                  <div className="bg-red-950/20 border border-red-800/40 p-4 rounded-xl text-xs text-red-300 space-y-1.5 shadow-md flex items-start gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-red-400 text-sm">⚠️ INVALID RUN — DO NOT USE FOR PRESENTATION</p>
+                      <ul className="list-disc list-inside space-y-1 mt-1.5 pl-0.5 text-[11px] text-red-400/90">
+                        {parsedResults.sanity_gate.violations.map((v: string, idx: number) => (
+                          <li key={idx}>{v}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {parsedResults?.sanity_gate?.warnings && parsedResults.sanity_gate.warnings.length > 0 && (
+                  <div className="bg-amber-950/20 border border-amber-800/40 p-4 rounded-xl text-xs text-amber-300 space-y-1 shadow-md flex items-start gap-2.5">
+                    <HelpCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-amber-400 text-xs">Sweep Run Warnings:</p>
+                      <ul className="list-disc list-inside space-y-1 mt-1 pl-0.5 text-[11px] text-amber-400/90">
+                        {parsedResults.sanity_gate.warnings.map((w: string, idx: number) => (
+                          <li key={idx}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
                 {/* Run Details Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 shadow-md">
@@ -452,9 +513,16 @@ Generated automatically by TriForge Benchmark Harness
                         <BarChart data={accuracyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                           <XAxis dataKey="name" stroke="#71717a" fontSize={9} />
-                          <YAxis stroke="#71717a" fontSize={9} />
+                          <YAxis stroke="#71717a" fontSize={9} domain={[0, 100]} />
                           <Tooltip contentStyle={{ backgroundColor: "#18181b", borderColor: "#27272a" }} />
-                          <Bar dataKey="Accuracy" fill="#10b981" />
+                          <Bar dataKey="Accuracy">
+                            {accuracyData.map((entry, idx) => (
+                              <Cell 
+                                key={`acc-cell-${idx}`} 
+                                fill={idx === 0 ? "#10b981" : idx === 1 ? "#3b82f6" : "#f59e0b"} 
+                              />
+                            ))}
+                          </Bar>
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -470,7 +538,14 @@ Generated automatically by TriForge Benchmark Harness
                           <XAxis dataKey="name" stroke="#71717a" fontSize={9} />
                           <YAxis stroke="#71717a" fontSize={9} />
                           <Tooltip contentStyle={{ backgroundColor: "#18181b", borderColor: "#27272a" }} />
-                          <Bar dataKey="Latency" fill="#eab308" />
+                          <Bar dataKey="Latency">
+                            {latencyData.map((entry, idx) => (
+                              <Cell 
+                                key={`lat-cell-${idx}`} 
+                                fill={idx === 0 ? "#10b981" : idx === 1 ? "#f43f5e" : "#f59e0b"} 
+                              />
+                            ))}
+                          </Bar>
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -486,7 +561,14 @@ Generated automatically by TriForge Benchmark Harness
                           <XAxis dataKey="name" stroke="#71717a" fontSize={9} />
                           <YAxis stroke="#71717a" fontSize={9} />
                           <Tooltip contentStyle={{ backgroundColor: "#18181b", borderColor: "#27272a" }} />
-                          <Bar dataKey="Cost" fill="#3b82f6" />
+                          <Bar dataKey="Cost">
+                            {costData.map((entry, idx) => (
+                              <Cell 
+                                key={`cost-cell-${idx}`} 
+                                fill={idx === 0 ? "#10b981" : idx === 1 ? "#f43f5e" : "#f59e0b"} 
+                              />
+                            ))}
+                          </Bar>
                         </BarChart>
                       </ResponsiveContainer>
                     </div>

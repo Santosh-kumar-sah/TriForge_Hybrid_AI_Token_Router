@@ -30,7 +30,10 @@ interface RequestHistoryItem {
   timestamp: string;
 }
 
+import { useAuth } from "@/context/AuthContext";
+
 export default function AnalyticsPage() {
+  const { user, authHeaders } = useAuth();
   const [history, setHistory] = useState<RequestHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +45,10 @@ export default function AnalyticsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/history?limit=30`);
+      const emailQuery = user?.email ? `&user_email=${encodeURIComponent(user.email)}` : "";
+      const res = await fetch(`${API_BASE_URL}/api/history?limit=30${emailQuery}`, {
+        headers: authHeaders
+      });
       if (!res.ok) throw new Error("Failed to fetch request history.");
       const json = await res.json();
       setHistory(json);
@@ -53,12 +59,17 @@ export default function AnalyticsPage() {
     }
   };
 
+  useEffect(() => {
+    fetchHistory();
+  }, [user?.email]);
+
   const handleDeleteHistoryItem = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Are you sure you want to delete this prompt from history?")) return;
     try {
       const res = await fetch(`${API_BASE_URL}/api/history/${id}`, {
         method: "DELETE",
+        headers: authHeaders
       });
       if (!res.ok) throw new Error("Failed to delete history item.");
       
